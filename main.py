@@ -1,23 +1,9 @@
-from flask import Flask, render_template, Response
+from flask import Flask, render_template, request, jsonify
 import cv2
+import numpy as np
+import base64
 
-app = Flask(__name__, template_folder='templates')
-
-
-def gen_frames():
-    camera = cv2.VideoCapture(0)  # Capture from the default camera
-    while True:
-        success, frame = camera.read()  # Read the camera frame
-        if not success:
-            break
-        else:
-            # Process the frame here (e.g., convert to grayscale)
-            # frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-
-            ret, buffer = cv2.imencode('.jpg', frame)
-            frame = buffer.tobytes()
-            yield (b'--frame\r\n'
-                   b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+app = Flask(__name__)
 
 
 @app.route('/')
@@ -25,10 +11,24 @@ def index():
     return render_template('index.html')
 
 
-@app.route('/video_feed')
-def video_feed():
-    return Response(gen_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+@app.route('/process_frame', methods=['POST'])
+def process_frame():
+    data = request.json
+    img_data = data['image']
+    img_data = img_data.split(",")[1]
+    img_bytes = base64.b64decode(img_data)
+    np_arr = np.frombuffer(img_bytes, np.uint8)
+    frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+
+    # Process the frame (e.g., convert to grayscale)
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+    # Convert the processed frame back to base64 to send back to the client
+    _, buffer = cv2.imencode('.jpg', gray)
+    processed_img = base64.b64encode(buffer).decode('utf-8')
+
+    return jsonify({'image': 'data:image/jpeg;base64,' + processed_img})
 
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=8000)
+    app.run(debug=True)
